@@ -30,6 +30,9 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.location.GnssStatus;
+import android.location.GpsSatellite;
+import android.location.GpsStatus;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -38,8 +41,11 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -52,11 +58,13 @@ import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.villoren.android.kalmanlocationmanager.lib.KalmanLocationManager;
 
+import java.util.Iterator;
 import java.util.prefs.Preferences;
 
 import static com.villoren.android.kalmanlocationmanager.lib.KalmanLocationManager.UseProvider;
 
-public class MainActivity extends Activity {
+@SuppressWarnings("MissingPermission")
+public class MainActivity extends Activity implements GpsStatus.Listener {
 
     // Constant
 
@@ -64,19 +72,19 @@ public class MainActivity extends Activity {
      * Request location updates with the highest possible frequency on gps.
      * Typically, this means one update per second for gps.
      */
-    private static final long GPS_TIME = 1000;
+    private static final long GPS_TIME = 2000;
 
     /**
      * For the network provider, which gives locations with less accuracy (less reliable),
      * request updates every 5 seconds.
      */
-    private static final long NET_TIME = 5000;
+    private static final long NET_TIME = 600000;
 
     /**
      * For the filter-time argument we use a "real" value: the predictions are triggered by a timer.
      * Lets say we want 5 updates (estimates) per second = update each 200 millis.
      */
-    private static final long FILTER_TIME = 200;
+    private static final long FILTER_TIME = 1000;
 
     // Context
     private KalmanLocationManager mKalmanLocationManager;
@@ -88,20 +96,25 @@ public class MainActivity extends Activity {
     private TextView tvNet;
     private TextView tvKal;
     private TextView tvAlt;
+    private LinearLayout layoutSatellites;
     private SeekBar sbZoom;
-
     // Map elements
     private GoogleMap mGoogleMap;
+
     private Circle mGpsCircle;
     private Circle mNetCircle;
-
     // Textview animation
     private Animation mGpsAnimation;
+
     private Animation mNetAnimation;
     private Animation mKalAnimation;
-
     // GoogleMaps own OnLocationChangedListener (not android's LocationListener)
     private LocationSource.OnLocationChangedListener mOnLocationChangedListener;
+
+    private String info = "-";
+    private LocationManager mService;
+    private TextView gpsInfo;
+    private TextView netInfo;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,7 +144,10 @@ public class MainActivity extends Activity {
         tvNet = (TextView) findViewById(R.id.tvNet);
         tvKal = (TextView) findViewById(R.id.tvKal);
         tvAlt = (TextView) findViewById(R.id.tvAlt);
+        gpsInfo = (TextView) findViewById(R.id.gpsInfo);
+        netInfo = (TextView) findViewById(R.id.netInfo);
         sbZoom = (SeekBar) findViewById(R.id.sbZoom);
+        layoutSatellites = (LinearLayout) findViewById(R.id.layout_satellites);
 
         // Initial zoom level
         sbZoom.setProgress(mPreferences.getInt("zoom", 80));
@@ -143,7 +159,7 @@ public class MainActivity extends Activity {
         uiSettings.setCompassEnabled(false);
         uiSettings.setZoomControlsEnabled(false);
         uiSettings.setMyLocationButtonEnabled(false);
-        mGoogleMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
+//        mGoogleMap.setMapType(GoogleMap.MAP_TYPE_HYBRID);
         mGoogleMap.setLocationSource(mLocationSource);
         mGoogleMap.setMyLocationEnabled(true);
 
@@ -187,7 +203,11 @@ public class MainActivity extends Activity {
         tvKal.startAnimation(mKalAnimation);
 
         // Init altitude textview
-        tvAlt.setText(getString(R.string.activity_main_fmt_alt, "-"));
+//        tvAlt.setText(getString(R.string.activity_main_fmt_alt, "-"));
+        tvAlt.setText(info);
+
+        mService = (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+        mService.addGpsStatusListener(this);
     }
 
     @Override
@@ -294,7 +314,9 @@ public class MainActivity extends Activity {
 
                 // Update altitude
                 String altitude = location.hasAltitude() ? String.format("%.1f", location.getAltitude()) : "-";
-                tvAlt.setText(getString(R.string.activity_main_fmt_alt, altitude));
+                tvAlt.setText(info + "\n" + location.getProvider()+": "+location.getAccuracy());
+
+//                tvAlt.setText(getString(R.string.activity_main_fmt_alt, altitude));
 
                 // Animate textview
                 tvKal.clearAnimation();
@@ -321,6 +343,13 @@ public class MainActivity extends Activity {
                     statusString = "Available";
                     break;
             }
+            info = statusString;
+            tvAlt.setText(info);
+            if(provider.equals(LocationManager.GPS_PROVIDER)){
+                gpsInfo.setText(statusString);
+            } else if(provider.equals(LocationManager.NETWORK_PROVIDER)){
+                netInfo.setText(statusString);
+            }
 
             Toast.makeText(
                     MainActivity.this,
@@ -335,15 +364,19 @@ public class MainActivity extends Activity {
             Toast.makeText(
                     MainActivity.this, String.format("Provider '%s' enabled", provider), Toast.LENGTH_SHORT).show();
 
+            info = provider + " enabled";
             // Remove strike-thru in label
             if (provider.equals(LocationManager.GPS_PROVIDER)) {
-
                 tvGps.setPaintFlags(tvGps.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
                 tvGps.invalidate();
             }
+            if(provider.equals(LocationManager.GPS_PROVIDER)){
+                gpsInfo.setText("Enabled");
+            } else if(provider.equals(LocationManager.NETWORK_PROVIDER)){
+                netInfo.setText("Enabled");
+            }
 
             if (provider.equals(LocationManager.NETWORK_PROVIDER)) {
-
                 tvNet.setPaintFlags(tvNet.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
                 tvNet.invalidate();
             }
@@ -355,12 +388,18 @@ public class MainActivity extends Activity {
             Toast.makeText(
                     MainActivity.this, String.format("Provider '%s' disabled", provider), Toast.LENGTH_SHORT).show();
 
+            info = provider + " disabled";
             // Set strike-thru in label and hide accuracy circle
             if (provider.equals(LocationManager.GPS_PROVIDER)) {
 
                 tvGps.setPaintFlags(tvGps.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
                 tvGps.invalidate();
                 mGpsCircle.setVisible(false);
+            }
+            if(provider.equals(LocationManager.GPS_PROVIDER)){
+                gpsInfo.setText("Disabled");
+            } else if(provider.equals(LocationManager.NETWORK_PROVIDER)){
+                netInfo.setText("Disabled");
             }
 
             if (provider.equals(LocationManager.NETWORK_PROVIDER)) {
@@ -389,4 +428,63 @@ public class MainActivity extends Activity {
             mOnLocationChangedListener = null;
         }
     };
+
+    @Override
+    public void onGpsStatusChanged(int event) {
+        GpsStatus mStatus = mService.getGpsStatus(null);
+        switch (event) {
+            case GpsStatus.GPS_EVENT_STARTED:
+                info = "gps started";
+                tvAlt.setText(info);
+                // Do Something with mStatus info
+                break;
+
+            case GpsStatus.GPS_EVENT_STOPPED:
+                info = "gps stopped";
+                tvAlt.setText(info);
+                // Do Something with mStatus info
+                break;
+
+            case GpsStatus.GPS_EVENT_FIRST_FIX:
+                info = "gps first fix: " + mStatus.getTimeToFirstFix();
+                tvAlt.setText(info);
+                // Do Something with mStatus info
+                break;
+
+            case GpsStatus.GPS_EVENT_SATELLITE_STATUS:
+                int i = 0;
+                layoutSatellites.removeAllViews();
+                Iterator<GpsSatellite> iter = mStatus.getSatellites().iterator();
+                while(iter.hasNext()){
+                    GpsSatellite entry = iter.next();
+
+                    View view = getLayoutInflater().inflate(R.layout.view_satellite, null);
+                    ProgressBar bar = (ProgressBar) view.findViewById(R.id.bar);
+
+//                    bar.setMax(50);
+                    bar.setProgress((int) entry.getSnr());
+//                    bar.setProgress(entry.);
+
+                    TextView number = (TextView) view.findViewById(R.id.number);
+                    number.setText(entry.getPrn()+"\n"+entry.getAzimuth()+"\n"+entry.getElevation()+"\n"+entry.getSnr()+"\n"+
+                            (entry.usedInFix() ? "F" : "-") +
+                            (entry.hasAlmanac() ? "A" : "-")+
+                            (entry.hasEphemeris() ? "E" : "-"));
+                    layoutSatellites.addView(view);
+
+                    if(entry.usedInFix() || entry.getSnr() > 10) {
+                        i++;
+                        number.setTextColor(Color.BLACK);
+                    } else {
+                        number.setTextColor(Color.GRAY);
+                    }
+                }
+
+//                info = "gps satellite status: " + i;
+//                tvAlt.setText(info);
+
+                // Do Something with mStatus info
+                break;
+        }
+    }
 }
