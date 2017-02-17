@@ -7,5 +7,12 @@
     <string name="activity_main_label_kal">KAL</string>
     <string name="activity_main_fmt_alt">Altitude: %s m</string>
     <string name="activity_main_action_settings">Location settings</string>
+    <string name="caught_an_exception_s" formatted="false"><![CDATA[
+        Caught an exception <b>\"%1$s\"</b>
+    ]]></string>
+    <string name="uncaught_exception_in_application">Uncaught exception</string>
+    <string name="send_report_about_an_error">Send report about an error</string>
+    <string name="restart">Restart</string>
+    <string name="report">Report</string>
 
 </resources>

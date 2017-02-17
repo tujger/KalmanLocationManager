@@ -30,7 +30,6 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.location.GnssStatus;
 import android.location.GpsSatellite;
 import android.location.GpsStatus;
 import android.location.Location;
@@ -39,13 +38,16 @@ import android.location.LocationManager;
 import android.location.LocationProvider;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.TypedValue;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.AlphaAnimation;
 import android.view.animation.Animation;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.RelativeLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -59,7 +61,6 @@ import com.google.android.gms.maps.model.LatLng;
 import com.villoren.android.kalmanlocationmanager.lib.KalmanLocationManager;
 
 import java.util.Iterator;
-import java.util.prefs.Preferences;
 
 import static com.villoren.android.kalmanlocationmanager.lib.KalmanLocationManager.UseProvider;
 
@@ -115,6 +116,7 @@ public class MainActivity extends Activity implements GpsStatus.Listener {
     private LocationManager mService;
     private TextView gpsInfo;
     private TextView netInfo;
+    private LinearLayout layoutGpsStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -148,6 +150,18 @@ public class MainActivity extends Activity implements GpsStatus.Listener {
         netInfo = (TextView) findViewById(R.id.netInfo);
         sbZoom = (SeekBar) findViewById(R.id.sbZoom);
         layoutSatellites = (LinearLayout) findViewById(R.id.layout_satellites);
+        layoutGpsStatus = (LinearLayout) findViewById(R.id.layout_gps_status);
+        layoutGpsStatus.findViewById(R.id.info).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                int v = layoutGpsStatus.findViewById(R.id.layout_gps_info).getVisibility();
+                if(v == View.VISIBLE) {
+                    layoutGpsStatus.findViewById(R.id.layout_gps_info).setVisibility(View.GONE);
+                } else {
+                    layoutGpsStatus.findViewById(R.id.layout_gps_info).setVisibility(View.VISIBLE);
+                }
+            }
+        });
 
         // Initial zoom level
         sbZoom.setProgress(mPreferences.getInt("zoom", 80));
@@ -351,11 +365,11 @@ public class MainActivity extends Activity implements GpsStatus.Listener {
                 netInfo.setText(statusString);
             }
 
-            Toast.makeText(
+            /*Toast.makeText(
                     MainActivity.this,
                     String.format("Provider '%s' status: %s", provider, statusString),
                     Toast.LENGTH_SHORT)
-            .show();
+            .show();*/
         }
 
         @Override
@@ -452,13 +466,25 @@ public class MainActivity extends Activity implements GpsStatus.Listener {
                 break;
 
             case GpsStatus.GPS_EVENT_SATELLITE_STATUS:
+                int total = 0;
                 int i = 0;
+                float maxSnr = 0;
                 layoutSatellites.removeAllViews();
                 Iterator<GpsSatellite> iter = mStatus.getSatellites().iterator();
+
                 while(iter.hasNext()){
                     GpsSatellite entry = iter.next();
+                    total++;
+                    if(entry.getSnr() > maxSnr) maxSnr = entry.getSnr();
 
-                    View view = getLayoutInflater().inflate(R.layout.view_satellite, null);
+                    if(entry.getSnr() < 10) continue;
+
+                    LinearLayout view = (LinearLayout) getLayoutInflater().inflate(R.layout.view_satellite, null);
+                    int width = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 35, getResources().getDisplayMetrics());
+
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
+                    view.setLayoutParams(params);
+
                     ProgressBar bar = (ProgressBar) view.findViewById(R.id.bar);
 
 //                    bar.setMax(50);
@@ -466,19 +492,55 @@ public class MainActivity extends Activity implements GpsStatus.Listener {
 //                    bar.setProgress(entry.);
 
                     TextView number = (TextView) view.findViewById(R.id.number);
-                    number.setText(entry.getPrn()+"\n"+entry.getAzimuth()+"\n"+entry.getElevation()+"\n"+entry.getSnr()+"\n"+
-                            (entry.usedInFix() ? "F" : "-") +
-                            (entry.hasAlmanac() ? "A" : "-")+
-                            (entry.hasEphemeris() ? "E" : "-"));
+                    TextView snr = (TextView) view.findViewById(R.id.snr);
+                    snr.setText(""+entry.getSnr());
+                    number.setText(""+entry.getPrn());//+"\n"+/*entry.getAzimuth()+"\n"+*/entry.getElevation()+"\n"+
+//                            (entry.usedInFix() ? "F" : "-") +
+//                            (entry.hasAlmanac() ? "A" : "-")+
+//                            (entry.hasEphemeris() ? "E" : "-"));
                     layoutSatellites.addView(view);
 
-                    if(entry.usedInFix() || entry.getSnr() > 10) {
-                        i++;
+                    i++;
+                    if(entry.usedInFix()) {
+                        number.setTextColor(Color.BLUE);
+                        snr.setTextColor(Color.BLUE);
+                    } else if(entry.getSnr() > 10) {
                         number.setTextColor(Color.BLACK);
-                    } else {
-                        number.setTextColor(Color.GRAY);
+                        snr.setTextColor(Color.BLACK);
                     }
                 }
+                iter = mStatus.getSatellites().iterator();
+                while(iter.hasNext()){
+                    GpsSatellite entry = iter.next();
+                    if(entry.getSnr() >= 10) continue;
+
+                    LinearLayout view = (LinearLayout) getLayoutInflater().inflate(R.layout.view_satellite, null);
+                    int width = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 35, getResources().getDisplayMetrics());
+                    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(width, ViewGroup.LayoutParams.MATCH_PARENT);
+                    view.setLayoutParams(params);
+
+                    ProgressBar bar = (ProgressBar) view.findViewById(R.id.bar);
+
+//                    bar.setMax(50);
+                    bar.setProgress((int) entry.getSnr());
+//                    bar.setProgress(entry.);
+
+                    TextView number = (TextView) view.findViewById(R.id.number);
+                    TextView snr = (TextView) view.findViewById(R.id.snr);
+                    snr.setText(""+entry.getSnr());
+                    number.setText(""+entry.getPrn());//+"\n"+/*entry.getAzimuth()+"\n"+*/entry.getElevation()+"\n"+
+//                            (entry.usedInFix() ? "F" : "-") +
+//                            (entry.hasAlmanac() ? "A" : "-")+
+//                            (entry.hasEphemeris() ? "E" : "-"));
+                    layoutSatellites.addView(view);
+
+                    number.setTextColor(Color.GRAY);
+                    snr.setTextColor(Color.GRAY);
+                }
+
+                ((TextView)layoutGpsStatus.findViewById(R.id.total)).setText(""+total);
+                ((TextView)layoutGpsStatus.findViewById(R.id.active)).setText(""+i);
+                ((TextView)layoutGpsStatus.findViewById(R.id.max_snr)).setText(""+maxSnr);
 
 //                info = "gps satellite status: " + i;
 //                tvAlt.setText(info);
